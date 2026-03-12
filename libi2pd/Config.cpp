@@ -27,6 +27,7 @@ namespace i2p {
 namespace config {
 	options_description m_OptionsDesc;
 	variables_map m_Options;
+	bool m_Initialized = false;
 
 #if defined(_WIN32)
 #define path_to_file(file) "%appdata%\\i2pd\\" #file
@@ -40,6 +41,9 @@ namespace config {
 
 	void Init()
 	{
+		if (m_Initialized) return;
+		m_Initialized = true;
+
 		options_description general("General options");
 		general.add_options()
 			("help",                                                          "Show this message")
