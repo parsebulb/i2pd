@@ -197,9 +197,10 @@ namespace transport
 		m_IsRunning = true;
 		m_Thread = new std::thread (std::bind (&Transports::Run, this));
 		std::string ntcp2proxy; i2p::config::GetOption("ntcp2.proxy", ntcp2proxy);
-        int ntcp2version = 2;
+        int ntcp2version = 2, ssu2version = 2;
 #if OPENSSL_PQ
         i2p::config::GetOption("ntcp2.version", ntcp2version);
+        i2p::config::GetOption("ssu2.version", ssu2version);
 #endif
 		i2p::http::URL proxyurl;
 		// create NTCP2. TODO: move to acceptor
@@ -237,6 +238,7 @@ namespace transport
 		if (enableSSU2)
 		{
 			m_SSU2Server = new SSU2Server ();
+			m_SSU2Server->SetVersion (ssu2version);
 			std::string ssu2proxy; i2p::config::GetOption("ssu2.proxy", ssu2proxy);
 			if (!ssu2proxy.empty())
 			{
@@ -894,10 +896,12 @@ namespace transport
 		m_X25519KeysPairSupplier.Return (pair);
 	}
 
-	void Transports::PeerConnected (std::shared_ptr<TransportSession> session)
+	void Transports::PeerConnected (std::weak_ptr<TransportSession> session)
 	{
-		boost::asio::post (*m_Service, [session, this]()
+		boost::asio::post (*m_Service, [weakSession = std::move(session), this]()
 		{
+			auto session = weakSession.lock();
+			if (!session) return;
 			auto remoteIdentity = session->GetRemoteIdentity ();
 			if (!remoteIdentity) return;
 			auto ident = remoteIdentity->GetIdentHash ();
@@ -971,10 +975,12 @@ namespace transport
 		});
 	}
 
-	void Transports::PeerDisconnected (std::shared_ptr<TransportSession> session)
+	void Transports::PeerDisconnected (std::weak_ptr<TransportSession> session)
 	{
-		boost::asio::post (*m_Service, [session, this]()
+		boost::asio::post (*m_Service, [weakSession = std::move(session), this]()
 		{
+			auto session = weakSession.lock();
+			if (!session) return;
 			auto remoteIdentity = session->GetRemoteIdentity ();
 			if (!remoteIdentity) return;
 			auto ident = remoteIdentity->GetIdentHash ();
@@ -1480,14 +1486,18 @@ namespace transport
 			ssu2 = false; // don't enable ssu2 for yggdrasil only router
 		if (ssu2)
 		{
+			int ssu2version = 2;
+#if OPENSSL_PQ
+			i2p::config::GetOption("ssu2.version", ssu2version);
+#endif
 			uint16_t ssu2port; i2p::config::GetOption("ssu2.port", ssu2port);
 			if (!ssu2port && port) ssu2port = port;
 			bool published = false;
 			if (!stan) i2p::config::GetOption("ssu2.published", published);
 			if (published)
-				i2p::context.PublishSSU2Address (ssu2port, true, ipv4, ipv6); // publish
+				i2p::context.PublishSSU2Address (ssu2port, true, ipv4, ipv6, ssu2version); // publish
 			else
-				i2p::context.PublishSSU2Address (ssu2port, false, ipv4, ipv6); // unpublish
+				i2p::context.PublishSSU2Address (ssu2port, false, ipv4, ipv6, ssu2version); // unpublish
 		}
 		if (stan)
 			i2p::context.SetStatus (eRouterStatusStan);
