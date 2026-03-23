@@ -475,6 +475,12 @@ namespace transport
 
 	std::future<std::shared_ptr<TransportSession> > Transports::SendMessages (const i2p::data::IdentHash& ident, std::list<std::shared_ptr<i2p::I2NPMessage> >&& msgs)
 	{
+		if (!m_Service) {
+			// Transport::Stop() has been called and m_Service destroyed.
+			std::promise<std::shared_ptr<TransportSession>> promise;
+			promise.set_value(nullptr);
+			return promise.get_future();
+		}
 		return boost::asio::post (*m_Service, boost::asio::use_future ([this, ident, msgs = std::move(msgs)] () mutable
 			{
 				return PostMessages (ident, msgs);
