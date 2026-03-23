@@ -168,14 +168,6 @@ namespace transport
 	Transports::~Transports ()
 	{
 		Stop ();
-		if (m_Service)
-		{
-			delete m_PeerCleanupTimer; m_PeerCleanupTimer = nullptr;
-			delete m_PeerTestTimer; m_PeerTestTimer = nullptr;
-			delete m_UpdateBandwidthTimer; m_UpdateBandwidthTimer = nullptr;
-			delete m_Work; m_Work = nullptr;
-			delete m_Service; m_Service = nullptr;
-		}
 	}
 
 	void Transports::Start (bool enableNTCP2, bool enableSSU2)
@@ -384,6 +376,14 @@ namespace transport
 			m_Thread = nullptr;
 		}
 		m_Peers.clear ();
+		if (m_Service)
+		{
+			delete m_PeerCleanupTimer; m_PeerCleanupTimer = nullptr;
+			delete m_PeerTestTimer; m_PeerTestTimer = nullptr;
+			delete m_UpdateBandwidthTimer; m_UpdateBandwidthTimer = nullptr;
+			delete m_Work; m_Work = nullptr;
+			delete m_Service; m_Service = nullptr;
+		}
 	}
 
 	void Transports::Run ()
