@@ -52,11 +52,8 @@ namespace stream
 
 	const size_t STREAMING_MTU = 1730;
 	const size_t STREAMING_MTU_RATCHETS = 1812;
-#if OPENSSL_PQ
-	const size_t MAX_PACKET_SIZE = 8192;
-#else
-	const size_t MAX_PACKET_SIZE = 4096;
-#endif
+	const size_t MAX_PACKET_SIZE = 3072;
+
 	const size_t COMPRESSION_THRESHOLD_SIZE = 66;
 	const int MAX_NUM_RESEND_ATTEMPTS = 10;
 	const int INITIAL_WINDOW_SIZE = 10;
@@ -79,8 +76,8 @@ namespace stream
 	const uint16_t DELAY_CHOKING_JAVA = 61000; // in milliseconds
 	const uint16_t DELAY_CHOKING_2 = 65535; // in milliseconds
 	const uint16_t DELAY_CHOKING_3 = 65534; // in milliseconds
-	const uint64_t SEND_INTERVAL = 10000; // in microseconds
-	const uint64_t SEND_INTERVAL_VARIANCE = 2000; // in microseconds
+	const uint64_t SEND_INTERVAL = 5000; // in microseconds
+	const uint64_t SEND_INTERVAL_VARIANCE = 1000; // in microseconds
 	const uint64_t REQUEST_IMMEDIATE_ACK_INTERVAL = 7500; // in milliseconds
 	const uint64_t REQUEST_IMMEDIATE_ACK_INTERVAL_VARIANCE = 3200; // in milliseconds
 	const bool LOSS_BASED_CONTROL_ENABLED = 0; // 0/1

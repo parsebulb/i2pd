@@ -23,6 +23,7 @@ namespace i2p
 namespace client
 {
 	constexpr int I2P_SERVICE_READINESS_CHECK_INTERVAL = 1; // in seconds
+	constexpr uint64_t I2P_SERVICE_MIN_CLOSE_IDLE_TIME = 30000; // in milliseconds
 
 	class I2PServiceHandler;
 	class I2PService : public std::enable_shared_from_this<I2PService>
@@ -50,6 +51,9 @@ namespace client
 			void ClearHandlers ();
 
 			void SetConnectTimeout(uint64_t timeout);
+			void SetCloseIdleTime (uint64_t idleTime);
+			void SetNewDestOnResume (bool newDestOnResume) { m_NewDestOnResume = newDestOnResume; }
+			void UpdateLastActivityTime ();
 
 			void AddReadyCallback(ReadyCallback cb);
 
@@ -74,6 +78,9 @@ namespace client
 
 			void TriggerReadyCheckTimer();
 			void HandleReadyCheckTimer(const boost::system::error_code & ec);
+			void ScheduleIdleCheckTimer ();
+			void HandleIdleCheckTimer(const boost::system::error_code & ec);
+			void Resume ();
 
 		private:
 
@@ -83,9 +90,13 @@ namespace client
 			std::vector<std::pair<ReadyCallback, uint64_t> > m_ReadyCallbacks;
 			boost::asio::steady_timer m_ReadyTimer;
 			bool m_ReadyTimerTriggered;
-			uint64_t m_ConnectTimeout;
+			uint64_t m_ConnectTimeout; // in seconds
+			uint64_t m_CloseIdleTime; // in milliseconds
+			bool m_NewDestOnResume;
+			uint64_t m_LastActivityTime; // monotonic milliseconds
+			std::unique_ptr<boost::asio::steady_timer> m_IdleCheckTimer;
 
-			const size_t NEVER_TIMES_OUT = 0;
+			static constexpr size_t NEVER_TIMES_OUT = 0;
 
 		public:
 

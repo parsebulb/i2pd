@@ -115,6 +115,7 @@ namespace transport
 	const int MAX_NUM_DELAYED_MESSAGES = 150;
 	const int CHECK_PROFILE_NUM_DELAYED_MESSAGES = 15; // check profile after
 	const int NUM_X25519_PRE_GENERATED_KEYS = 25; // pre-generated x25519 keys pairs
+	const int MAX_NUM_CONNECTIONS_FROM_SUBNET_FOR_PEER = 3; // for first hop selection
 
 	const int IP_BAN_TIME = 1800; // in seconds
 	const int IP_BAN_TIME_VARIANCE = 540; // in seconds
@@ -147,7 +148,7 @@ namespace transport
 			bool IsOnline() const { return m_IsOnline; };
 			void SetOnline (bool online);
 
-			int GetLocalDelay () const; // in millseconds
+			int GetLocalDelay () const; // in milliseconds
 
 			auto& GetService () { return *m_Service; };
 			std::shared_ptr<i2p::crypto::X25519Keys> GetNextX25519KeysPair ();
@@ -198,6 +199,8 @@ namespace transport
 			bool IsBanned (const boost::asio::ip::address& addr);
 			bool AddBan (const boost::asio::ip::address& addr);
 
+			bool IsTooManyConnectionsFromSubnet (std::shared_ptr<const i2p::data::RouterInfo> r) const;
+
 		private:
 
 			void Run ();
@@ -216,6 +219,8 @@ namespace transport
 
 			template<typename Filter>
 				std::shared_ptr<const i2p::data::RouterInfo> GetRandomPeer (Filter filter) const;
+			boost::asio::ip::address GetNetworkAddress (std::shared_ptr<TransportSession> session) const;
+			boost::asio::ip::address GetNetworkAddress (const boost::asio::ip::address& addr) const;
 
 		private:
 
@@ -230,6 +235,8 @@ namespace transport
 			NTCP2Server * m_NTCP2Server;
 			mutable std::mutex m_PeersMutex;
 			std::unordered_map<i2p::data::IdentHash, std::shared_ptr<Peer> > m_Peers;
+			mutable std::mutex m_ConnectedNetworksMutex;
+			std::map<boost::asio::ip::address, int> m_ConnectedNetworks; // /24 or /56 address -> count
 
 			X25519KeysPairSupplier m_X25519KeysPairSupplier;
 

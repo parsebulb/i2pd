@@ -277,7 +277,8 @@ namespace config {
 			    "https://i2p.novg.net/,"
             	"https://reseed.stormycloud.org/,"
             	"https://reseed.sahil.world/,"
-            	"https://i2p.diyarciftci.xyz/"
+            	"https://i2p.diyarciftci.xyz/,"
+            	"https://bybyh.de/"
 			),                                                            "Reseed URLs, separated by comma")
 			("reseed.yggurls", value<std::string>()->default_value(
 				"http://[324:71e:281a:9ed3::ace]:7070/,"
@@ -363,6 +364,7 @@ namespace config {
 		persist.add_options()
 			("persist.profiles", value<bool>()->default_value(true),       "Persist peer profiles (default: true)")
 			("persist.addressbook", value<bool>()->default_value(true),    "Persist full addresses (default: true)")
+			("persist.netdbinterval", value<int>()->default_value(60),     "NetDb persist interval in seconds (default: 60)")
 		;
 
 		options_description cpuext("CPU encryption extensions options. Deprecated");

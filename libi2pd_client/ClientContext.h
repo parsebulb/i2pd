@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2013-2025, The PurpleI2P Project
+* Copyright (c) 2013-2026, The PurpleI2P Project
 *
 * This file is part of Purple i2pd project and licensed under BSD3
 *
@@ -49,6 +49,8 @@ namespace client
 	const char I2P_CLIENT_TUNNEL_MATCH_TUNNELS[] = "matchtunnels";
 	const char I2P_CLIENT_TUNNEL_CONNECT_TIMEOUT[] = "connecttimeout";
 	const char I2P_CLIENT_TUNNEL_KEEP_ALIVE_INTERVAL[] = "keepaliveinterval";
+	const char I2P_CLIENT_TUNNEL_CLOSE_IDLE_TIME[] = "i2cp.closeIdleTime";
+	const char I2P_CLIENT_TUNNEL_NEW_DEST_ON_RESUME[] = "i2cp.newDestOnResume";
 	const char I2P_SERVER_TUNNEL_HOST[] = "host";
 	const char I2P_SERVER_TUNNEL_HOST_OVERRIDE[] = "hostoverride";
 	const char I2P_SERVER_TUNNEL_I2P_HEADERS[] = "i2pheaders";
@@ -64,7 +66,7 @@ namespace client
 	const char I2P_SERVER_TUNNEL_ENABLE_UNIQUE_LOCAL[] = "enableuniquelocal";
 	const char I2P_SERVER_TUNNEL_SSL[] = "ssl";
 	const char UDP_CLIENT_TUNNEL_DATAGRAM_VERSION[] = "datagramversion";
-	
+
 	class ClientContext
 	{
 		public:
@@ -94,6 +96,7 @@ namespace client
 			std::shared_ptr<ClientDestination> CreateNewMatchedTunnelDestination(const i2p::data::PrivateKeys &keys,
 				const std::string & name, const i2p::util::Mapping * params = nullptr);
 			void DeleteLocalDestination (std::shared_ptr<ClientDestination> destination);
+			bool ReplaceLocalDestinationHash (const i2p::data::IdentHash& oldIdentHash, const i2p::data::IdentHash& newIdentHash);
 			std::shared_ptr<ClientDestination> FindLocalDestination (const i2p::data::IdentHash& destination) const;
 			bool LoadPrivateKeys (i2p::data::PrivateKeys& keys, std::string_view filename,
 				i2p::data::SigningKeyType sigType = i2p::data::SIGNING_KEY_TYPE_EDDSA_SHA512_ED25519,

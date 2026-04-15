@@ -67,7 +67,9 @@ namespace client
 				if (m_Nickname.empty ()) // try outbound
 					m_Nickname = (*params)[I2CP_PARAM_OUTBOUND_NICKNAME];
 				// otherwise we set default nickname in Start when we know local address
-				params->Get (I2CP_PARAM_DONT_PUBLISH_LEASESET, m_IsPublic); // override isPublic
+				bool dontPublishLeaseSet = true;
+				if (params->Get (I2CP_PARAM_DONT_PUBLISH_LEASESET, dontPublishLeaseSet))
+					m_IsPublic = !dontPublishLeaseSet; // override isPublic
 				params->Get (I2CP_PARAM_LEASESET_TYPE, m_LeaseSetType);
 				if (m_LeaseSetType == i2p::data::NETDB_STORE_TYPE_ENCRYPTED_LEASESET2)
 				{
@@ -159,10 +161,12 @@ namespace client
 		CleanUp (); // GarlicDestination
 	}
 
-	bool LeaseSetDestination::Reconfigure(const i2p::util::Mapping& params)
-	{
-		params.Get (I2CP_PARAM_DONT_PUBLISH_LEASESET, m_IsPublic);
 
+	bool LeaseSetDestination::Reconfigure (const i2p::util::Mapping& params)
+	{
+		bool dontPublishLeaseSet = !m_IsPublic;
+		params.Get(I2CP_PARAM_DONT_PUBLISH_LEASESET, dontPublishLeaseSet);
+		m_IsPublic = !dontPublishLeaseSet;
 		auto numTags = GetNumTags ();
 		params.Get (I2CP_PARAM_TAGS_TO_SEND, numTags);
 		auto numRatchetInboundTags = GetNumRatchetInboundTags ();
@@ -1132,6 +1136,23 @@ namespace client
 		LogPrint(eLogDebug, "Destination: -> Stopping done");
 	}
 
+	void ClientDestination::SetPrivateKeys (const i2p::data::PrivateKeys& keys)
+	{
+		if (m_StreamingDestination) m_StreamingDestination->Stop (); // close all streams
+		CleanUp (); // delete sessions and tags
+		auto pool = GetTunnelPool ();
+		if (pool) pool->DetachTunnels ();
+		m_Keys = keys;
+		// update static keys
+		for (auto it: m_EncryptionKeys)
+			if (it.second)
+			{
+				it.second->GenerateKeys ();
+				it.second->CreateDecryptor ();
+			}
+		if (m_StreamingDestination) m_StreamingDestination->Start ();
+	}
+
 	void ClientDestination::HandleDataMessage (const uint8_t * buf, size_t len,
 		i2p::garlic::ECIESX25519AEADRatchetSession * from)
 	{
@@ -1473,7 +1494,7 @@ namespace client
 					if (it.first == m_PreferredCryptoType)
 						preferredSection = it.second;
 					else
-						keySections.push_back (it.second);
+						keySections.push_front (it.second); // higher key type should appear first
 			}
 			if (preferredSection)
 				keySections.push_front (preferredSection); // make preferred first

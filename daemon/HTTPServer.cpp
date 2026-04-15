@@ -952,6 +952,7 @@ namespace http {
 				if (it->GetSendQueueSize () > 0)
 					tmp_s << " [queue:" << it->GetSendQueueSize () << "]";
 				if (it->IsSlow ()) tmp_s << " [slow]";
+				if (it->GetVersion () > 2) tmp_s << " [pq=" << (int)it->GetVersion () << "]";
 				tmp_s << "</div>\r\n" << std::endl;
 				cnt++;
 			}
@@ -969,6 +970,8 @@ namespace http {
 					tmp_s6 << " [itag:" << it->GetRelayTag () << "]";
 				if (it->GetSendQueueSize () > 0)
 					tmp_s6 << " [queue:" << it->GetSendQueueSize () << "]";
+				if (it->IsSlow ()) tmp_s6 << " [slow]";
+				if (it->GetVersion () > 2) tmp_s6 << " [pq=" << (int)it->GetVersion () << "]";
 				tmp_s6 << "</div>\r\n" << std::endl;
 				cnt6++;
 			}

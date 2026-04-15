@@ -251,6 +251,7 @@ namespace transport
 			bool SetVersion (uint8_t version);
 			void SetRemoteEndpoint (const boost::asio::ip::udp::endpoint& ep) { m_RemoteEndpoint = ep; };
 			const boost::asio::ip::udp::endpoint& GetRemoteEndpoint () const { return m_RemoteEndpoint; };
+			void AdjustMaxPayloadSize (size_t maxMtu = SSU2_MAX_PACKET_SIZE);
 			i2p::data::RouterInfo::CompatibleTransports GetRemoteTransports () const { return m_RemoteTransports; };
 			i2p::data::RouterInfo::CompatibleTransports GetRemotePeerTestTransports () const { return m_RemotePeerTestTransports; };
 			int GetRemoteVersion () const { return m_RemoteVersion; };
@@ -275,6 +276,7 @@ namespace transport
 			uint64_t GetLastResendTime () const { return m_LastResendTime; };
 			bool IsEstablished () const override { return m_State == eSSU2SessionStateEstablished; };
 			i2p::data::RouterInfo::SupportedTransports GetTransportType () const override;
+			boost::asio::ip::address GetRemoteAddress () const override { return m_RemoteEndpoint.address (); };
 			uint64_t GetConnID () const { return m_SourceConnID; };
 			SSU2SessionState GetState () const { return m_State; };
 			void SetState (SSU2SessionState state) { m_State = state; };
@@ -290,7 +292,6 @@ namespace transport
 		protected:
 
 			SSU2Server& GetServer () { return m_Server; }
-			uint8_t GetVersion () const { return m_Version; }
 			RouterStatus GetRouterStatus () const;
 			void SetRouterStatus (RouterStatus status) const;
 			size_t GetMaxPayloadSize () const { return m_MaxPayloadSize; }
@@ -322,8 +323,8 @@ namespace transport
 			void ResendHandshakePacket ();
 			void ConnectAfterIntroduction ();
 
-			void ProcessSessionRequest (Header& header, uint8_t * buf, size_t len);
-			void ProcessTokenRequest (Header& header, uint8_t * buf, size_t len);
+			bool ProcessSessionRequest (Header& header, uint8_t * buf, size_t len);
+			bool ProcessTokenRequest (Header& header, uint8_t * buf, size_t len);
 
 			bool SendSessionRequest (uint64_t token = 0);
 			void SendSessionCreated (const uint8_t * X);
@@ -344,7 +345,6 @@ namespace transport
 			virtual void HandleAddress (const uint8_t * buf, size_t len);
 			size_t CreateEndpoint (uint8_t * buf, size_t len, const boost::asio::ip::udp::endpoint& ep);
 			std::shared_ptr<const i2p::data::RouterInfo::Address> FindLocalAddress () const;
-			void AdjustMaxPayloadSize (size_t maxMtu = SSU2_MAX_PACKET_SIZE);
 			bool GetTestingState () const;
 			void SetTestingState(bool testing) const;
 			std::shared_ptr<const i2p::data::RouterInfo> ExtractRouterInfo (const uint8_t * buf, size_t size);
@@ -410,7 +410,6 @@ namespace transport
 			uint64_t m_LastResendTime, m_LastResendAttemptTime, m_NextRouterInfoResendTime; // in milliseconds
 			int m_NumRanges;
 			uint8_t m_Ranges[SSU2_MAX_NUM_ACK_RANGES*2]; // ranges sent with previous Ack if any
-			uint8_t m_Version;
 	};
 
 	inline uint64_t CreateHeaderMask (const uint8_t * kh, const uint8_t * nonce)

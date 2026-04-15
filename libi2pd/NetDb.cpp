@@ -39,6 +39,7 @@ namespace data
 
 	NetDb::NetDb (): m_IsRunning (false), m_Thread (nullptr), m_Reseeder (nullptr),
 		m_Storage("netDb", "r", "routerInfo-", "dat"), m_PersistProfiles (true),
+		m_NetDbPersistInterval (NETDB_MIN_PERSIST_INTERVAL*1000LL),
 		m_LastExploratorySelectionUpdateTime (0), m_Rng(i2p::util::GetMonotonicMicroseconds () % 1000000LL)
 	{
 	}
@@ -84,6 +85,12 @@ namespace data
 			m_Floodfills.Insert (i2p::context.GetSharedRouterInfo ());
 
 		i2p::config::GetOption("persist.profiles", m_PersistProfiles);
+
+		int persistInterval = 0;
+		i2p::config::GetOption("persist.netdbinterval", persistInterval);
+		if (persistInterval < NETDB_MIN_PERSIST_INTERVAL) persistInterval = NETDB_MIN_PERSIST_INTERVAL;
+		if (persistInterval > NETDB_MAX_PERSIST_INTERVAL) persistInterval = NETDB_MAX_PERSIST_INTERVAL;
+		m_NetDbPersistInterval = persistInterval*1000LL;
 
 		m_IsRunning = true;
 		m_Thread = new std::thread (std::bind (&NetDb::Run, this));
@@ -154,7 +161,7 @@ namespace data
 					continue; // don't manage netdb when offline or transports are not running
 
 				uint64_t mts = i2p::util::GetMonotonicMilliseconds ();
-				if (mts >= lastManage + 60000) // manage routers and leasesets every minute
+				if (mts >= lastManage + m_NetDbPersistInterval) // manage routers and leasesets every persist.netdbinterval
 				{
 					if (lastManage)
 					{
@@ -793,18 +800,6 @@ namespace data
 			LogPrint (eLogError, "NetDb: Requests is null");
 	}
 
-	void NetDb::HandleNTCP2RouterInfoMsg (std::shared_ptr<const I2NPMessage> m)
-	{
-		uint8_t flood = m->GetPayload ()[0] & NTCP2_ROUTER_INFO_FLAG_REQUEST_FLOOD;
-		bool updated;
-		auto ri = AddRouterInfo (m->GetPayload () + 1, m->GetPayloadLength () - 1, updated); // without flags
-		if (flood && updated && context.IsFloodfill () && ri)
-		{
-			auto floodMsg = CreateDatabaseStoreMsg (ri, 0); // replyToken = 0
-			Flood (ri->GetIdentHash (), floodMsg);
-		}
-	}
-
 	void NetDb::HandleDatabaseStoreMsg (std::shared_ptr<const I2NPMessage> m)
 	{
 		const uint8_t * buf = m->GetPayload ();
@@ -1167,7 +1162,7 @@ namespace data
 						router->IsReachableFrom (*compatibleWith)) && !router->IsNAT2NATOnly (*compatibleWith) &&
 					router->GetVersion () >= NETDB_MIN_ALLOWED_VERSION &&
 					router->IsECIES () && !router->IsHighCongestion (clientTunnel) &&
-					(!i2p::transport::transports.IsCheckReserved () || !router->IsSameSubnet (*compatibleWith)) &&
+					(!i2p::transport::transports.IsCheckReserved () || (!router->IsSameFamily (*compatibleWith) && !router->IsSameSubnet (*compatibleWith))) &&
 					(!checkIsReal || router->GetProfile ()->IsReal ()) &&
 					(!endpoint || (router->IsV4 () && (!reverse || router->IsPublished (true)))); // endpoint must be ipv4 and published if inbound(reverse)
 			});
@@ -1207,7 +1202,7 @@ namespace data
 					(router->GetCaps () & RouterInfo::eHighBandwidth) &&
 					router->GetVersion () >= NETDB_MIN_HIGHBANDWIDTH_VERSION &&
 					router->IsECIES () && !router->IsHighCongestion (true) &&
-					(!i2p::transport::transports.IsCheckReserved () || !router->IsSameSubnet (*compatibleWith)) &&
+					(!i2p::transport::transports.IsCheckReserved () || (!router->IsSameFamily (*compatibleWith) && !router->IsSameSubnet (*compatibleWith))) &&
 					(!checkIsReal || router->GetProfile ()->IsReal ()) &&
 					(!endpoint || (router->IsV4 () && (!reverse || router->IsPublished (true)))); // endpoint must be ipv4 and published if inbound(reverse)
 

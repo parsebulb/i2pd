@@ -60,6 +60,7 @@ namespace transport
             break;
             default:
                 m_CryptoType = i2p::data::CRYPTO_KEY_TYPE_ECIES_X25519_AEAD;
+                m_IsLongPadding = false;
         }
 #else
         m_CryptoType = i2p::data::CRYPTO_KEY_TYPE_ECIES_X25519_AEAD;
@@ -199,7 +200,7 @@ namespace transport
 		uint8_t options[32]; // actual options size is 16 bytes
 		memset (options, 0, 16);
 		options[0] = i2p::context.GetNetID (); // network ID
-		options[1] = 2; // ver, always 2 regradless actual version
+		options[1] = 2; // ver, always 2 regardless actual version
 		htobe16buf (options + 2, paddingLength); // padLen
 		// calculate m3p2Len
 		auto riBuffer = i2p::context.CopyRouterInfoBuffer ();
@@ -612,6 +613,7 @@ namespace transport
 	void NTCP2Session::Established ()
 	{
 		m_IsEstablished = true;
+		m_Version = (uint8_t)m_Establisher->m_CryptoType - 2;
 		m_Establisher.reset (nullptr);
 		SetTerminationTimeout (NTCP2_TERMINATION_TIMEOUT + m_Server.GetRng ()() % NTCP2_TERMINATION_TIMEOUT_VARIANCE);
 		m_NextRouterInfoResendTime = i2p::util::GetSecondsSinceEpoch () + NTCP2_ROUTERINFO_RESEND_INTERVAL +
@@ -1143,6 +1145,8 @@ namespace transport
 
 	void NTCP2Session::ClientLogin ()
 	{
+		if (m_Establisher->m_CryptoType > i2p::data::CRYPTO_KEY_TYPE_ECIES_X25519_AEAD && !(m_Server.GetRng ()() & 0x03))
+			m_Establisher->SetVersion (2); // switch to non-PQ  with a probability of one in four
 		m_Establisher->CreateEphemeralKey ();
 		boost::asio::post (m_Server.GetEstablisherService (),
 		    [s = shared_from_this ()] ()

@@ -480,8 +480,11 @@ namespace tunnel
 	{
 		if (ts > m_NextManageTime || ts + 2*TUNNEL_POOL_MANAGE_INTERVAL < m_NextManageTime) // in case if clock was adjusted
 		{
-			CreateTunnels (ts);
-			TestTunnels (ts);
+			if (!m_LocalDestination || !m_LocalDestination->IsIdling ())
+			{
+				CreateTunnels (ts);
+				TestTunnels (ts);
+			}
 			m_NextManageTime = ts + TUNNEL_POOL_MANAGE_INTERVAL + (tunnels.GetRng ()() % TUNNEL_POOL_MANAGE_INTERVAL)/2;
 		}
 	}
@@ -578,7 +581,8 @@ namespace tunnel
 				i2p::data::netdb.GetRandomRouter (prevHop, reverse, endpoint, false);
 			if (hop)
 			{
-				if (!hop->HasProfile () || !hop->GetProfile ()->IsBad ())
+				if ((!hop->HasProfile () || !hop->GetProfile ()->IsBad ()) &&
+					(prevHop != i2p::context.GetSharedRouterInfo () || !i2p::transport::transports.IsTooManyConnectionsFromSubnet (hop)))
 					break;
 			}
 			else if (tryClient)

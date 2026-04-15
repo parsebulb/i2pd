@@ -7,6 +7,7 @@
 */
 
 #include <string.h>
+#include <algorithm>
 #include <openssl/rand.h>
 #include "Log.h"
 #include "Transports.h"
@@ -91,9 +92,9 @@ namespace transport
 		m_WindowSize (SSU2_MIN_WINDOW_SIZE),
 		m_RTO (SSU2_INITIAL_RTO), m_RelayTag (0),m_ConnectTimer (server.GetService ()),
 		m_TerminationReason (eSSU2TerminationReasonNormalClose),
-		m_MaxPayloadSize (SSU2_MIN_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32), // min size
+		m_MaxPayloadSize (SSU2_MAX_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32), // max size
 		m_LastResendTime (0), m_LastResendAttemptTime (0), m_NextRouterInfoResendTime(0),
-		m_NumRanges (0), m_Version (2)
+		m_NumRanges (0)
 	{
 		if (in_RemoteRouter && m_Address)
 		{
@@ -105,8 +106,8 @@ namespace transport
 			if (in_RemoteRouter->IsSSU2PeerTesting (false)) m_RemotePeerTestTransports |= i2p::data::RouterInfo::eSSU2V6;
 			RAND_bytes ((uint8_t *)&m_DestConnID, 8);
 			RAND_bytes ((uint8_t *)&m_SourceConnID, 8);
+			AdjustMaxPayloadSize ();
 		}
-		AdjustMaxPayloadSize ();
 	}
 
 	SSU2Session::~SSU2Session ()
@@ -677,10 +678,10 @@ namespace transport
 		switch (header.h.type)
 		{
 			case eSSU2SessionRequest:
-				ProcessSessionRequest (header, buf, len);
+				return ProcessSessionRequest (header, buf, len);
 			break;
 			case eSSU2TokenRequest:
-				ProcessTokenRequest (header, buf, len);
+				return ProcessTokenRequest (header, buf, len);
 			break;
 			case eSSU2PeerTest:
 			{
@@ -760,7 +761,13 @@ namespace transport
 				payloadSize += 3;
 			}
 		}
-		payloadSize += CreatePaddingBlock (payload + payloadSize, 40 + offset - payloadSize, 1);
+		if (payloadSize <= m_MaxPayloadSize - 48)
+			payloadSize += CreatePaddingBlock (payload + payloadSize, std::min (m_MaxPayloadSize - payloadSize - 48, (size_t)32));
+		else
+		{
+			LogPrint (eLogError, "SSU2: SessionRequest max payload size is too small ", m_MaxPayloadSize);
+			return false;
+		}
 		// create and init noise state
 		if (!m_NoiseState) m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
 #if OPENSSL_PQ
@@ -820,24 +827,36 @@ namespace transport
 		return true;
 	}
 
-	void SSU2Session::ProcessSessionRequest (Header& header, uint8_t * buf, size_t len)
+	bool SSU2Session::ProcessSessionRequest (Header& header, uint8_t * buf, size_t len)
 	{
 		// we are Bob
-		if (len < 87)
+		if (len < 90)
 		{
 			LogPrint (eLogWarning, "SSU2: SessionRequest message too short ", len);
-			return;
+			return false;
 		}
 #if OPENSSL_PQ
 		if (header.h.flags[0] >= 2 && header.h.flags[0] <= 4) // ver
 		{
-			if (m_Version > 2)
+			if (m_Server.GetVersion () > 2)
 			{
-				if (!SetVersion (header.h.flags[0]))
+				if (SetVersion (header.h.flags[0]))
+				{
+					if (m_Version > 2)
+					{
+						auto keyLen = i2p::crypto::GetMLKEMPublicKeyLen ((i2p::data::CryptoKeyType)(m_Version + 2));
+						if (len < keyLen + 16 + 90)
+						{
+							LogPrint (eLogWarning, "SSU2: SessionRequest version ", m_Version, " message too short ", len);
+							return false;
+						}
+					}
+				}
+				else
 				{
 					m_TerminationReason = eSSU2TerminationReasonIncompatibleVersion;
 					SendRetry ();
-					return;
+					return true;
 				}
 			}
 		}
@@ -847,7 +866,7 @@ namespace transport
 #endif
 		{
             LogPrint (eLogWarning, "SSU2: SessionRequest protocol version ", (int)header.h.flags[0], " is not supported");
-            return;
+            return false;
 		}
 		const uint8_t nonce[12] = {0};
 		uint8_t headerX[48];
@@ -859,7 +878,7 @@ namespace transport
 		{
 			LogPrint (eLogDebug, "SSU2: SessionRequest token mismatch. Retry");
 			SendRetry ();
-			return;
+			return true;
 		}
 		// create and init noise state
 		if (!m_NoiseState) m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
@@ -889,7 +908,7 @@ namespace transport
             if (!m_NoiseState->Decrypt (buf + offset, encapsKey.data (), keyLen))
             {
 				LogPrint (eLogWarning, "SSU2: SessionRequest ML-KEM ciphertext section AEAD decryption failed");
-				return;
+				return false;
             }
 			m_NoiseState->MixHash (buf + offset, keyLen + 16);
 			offset += keyLen + 16;
@@ -900,14 +919,14 @@ namespace transport
 		if (offset + 16 > len)
 		{
 			LogPrint (eLogWarning, "SSU2: SessionRequest message is too short ", len);
-			return;
+			return false;
 		}
 		uint8_t * payload = buf + offset;
 		std::vector<uint8_t> decryptedPayload(len - offset - 16);
 		if (!m_NoiseState->Decrypt (payload, decryptedPayload.data (), decryptedPayload.size ()))
 		{
 			LogPrint (eLogWarning, "SSU2: SessionRequest AEAD verification failed ");
-			return;
+			return false;
 		}
 		m_NoiseState->MixHash (payload, len - offset); // h = SHA256(h || encrypted payload from Session Request) for SessionCreated
 		// payload
@@ -921,6 +940,7 @@ namespace transport
 		}
 		else
 			SendRetry ();
+		return true;
 	}
 
 	void SSU2Session::SendSessionCreated (const uint8_t * X)
@@ -993,7 +1013,13 @@ namespace transport
 			memcpy (payload + payloadSize + 7, &token.first, 8); // token
 			payloadSize += 15;
 		}
-		payloadSize += CreatePaddingBlock (payload + payloadSize, maxPayloadSize - payloadSize);
+		if (payloadSize <= maxPayloadSize)
+			payloadSize += CreatePaddingBlock (payload + payloadSize, std::min (maxPayloadSize - payloadSize, (size_t)64));
+		else
+		{
+			LogPrint (eLogError, "SSU2: SessionCreated max payload size is too small ", maxPayloadSize);
+			return;
+		}
 		// encrypt
 		const uint8_t nonce[12] = {0}; // always zero
 		if (!m_NoiseState->Encrypt (payload + offset, payload + offset, payloadSize - offset))
@@ -1002,7 +1028,7 @@ namespace transport
 			return;
 		}
 		payloadSize += 16;
-		m_NoiseState->MixHash (payload, payloadSize); // h = SHA256(h || encrypted Noise payload from Session Created)
+		m_NoiseState->MixHash (payload + offset, payloadSize - offset); // h = SHA256(h || encrypted Noise payload from Session Created)
 		header.ll[0] ^= CreateHeaderMask (i2p::context.GetSSU2IntroKey (), payload + (payloadSize - 24));
 		header.ll[1] ^= CreateHeaderMask (kh2, payload + (payloadSize - 12));
 		m_Server.ChaCha20 (headerX, 48, kh2, nonce, headerX);
@@ -1123,17 +1149,14 @@ namespace transport
 		m_NoiseState->MixHash (header.buf, 16); // h = SHA256(h || header)
 		// Encrypt part 1
 		uint8_t * part1 = m_SentHandshakePacket->headerX;
-		uint8_t nonce[12];
-		CreateNonce (1, nonce); // always one
-		i2p::crypto::AEADChaCha20Poly1305 (i2p::context.GetSSU2StaticPublicKey (), 32, m_NoiseState->m_H, 32, m_NoiseState->m_CK + 32, nonce, part1, 48, true);
+		m_NoiseState->Encrypt (i2p::context.GetSSU2StaticPublicKey (), part1, 32);
 		m_NoiseState->MixHash (part1, 48); // h = SHA256(h || ciphertext);
 		// KDF for Session Confirmed part 2
 		uint8_t sharedSecret[32];
 		i2p::context.GetSSU2StaticKeys ().Agree (Y, sharedSecret);
 		m_NoiseState->MixKey (sharedSecret);
 		// Encrypt part2
-		memset (nonce, 0, 12); // always zero
-		i2p::crypto::AEADChaCha20Poly1305 (payload, payloadSize, m_NoiseState->m_H, 32, m_NoiseState->m_CK + 32, nonce, payload, payloadSize + 16, true);
+		m_NoiseState->Encrypt (payload, payload, payloadSize);
 		payloadSize += 16;
 		m_NoiseState->MixHash (payload, payloadSize); // h = SHA256(h || ciphertext);
 		m_SentHandshakePacket->payloadSize = payloadSize;
@@ -1273,11 +1296,8 @@ namespace transport
 		// KDF for Session Confirmed part 1
 		m_NoiseState->MixHash (header.buf, 16); // h = SHA256(h || header)
 		// decrypt part1
-		uint8_t nonce[12];
-		CreateNonce (1, nonce);
 		uint8_t S[32];
-		if (!i2p::crypto::AEADChaCha20Poly1305 (buf + 16, 32, m_NoiseState->m_H, 32,
-			m_NoiseState->m_CK + 32, nonce, S, 32, false))
+		if (!m_NoiseState->Decrypt (buf + 16, S, 32))
 		{
 			LogPrint (eLogWarning, "SSU2: SessionConfirmed part 1 AEAD verification failed ");
 			if (m_SessionConfirmedFragment) m_SessionConfirmedFragment.reset (nullptr);
@@ -1290,11 +1310,9 @@ namespace transport
 		m_NoiseState->MixKey (sharedSecret);
 		KDFDataPhase (m_KeyDataReceive, m_KeyDataSend);
 		// decrypt part2
-		memset (nonce, 0, 12);
 		uint8_t * payload = buf + 64;
 		std::vector<uint8_t> decryptedPayload(len - 80);
-		if (!i2p::crypto::AEADChaCha20Poly1305 (payload, len - 80, m_NoiseState->m_H, 32,
-			m_NoiseState->m_CK + 32, nonce, decryptedPayload.data (), decryptedPayload.size (), false))
+		if (!m_NoiseState->Decrypt (payload, decryptedPayload.data (), len - 80))
 		{
 			LogPrint (eLogWarning, "SSU2: SessionConfirmed part 2 AEAD verification failed ");
 			if (m_SessionConfirmedFragment) m_SessionConfirmedFragment.reset (nullptr);
@@ -1477,13 +1495,27 @@ namespace transport
 		}
 	}
 
-	void SSU2Session::ProcessTokenRequest (Header& header, uint8_t * buf, size_t len)
+	bool SSU2Session::ProcessTokenRequest (Header& header, uint8_t * buf, size_t len)
 	{
 		// we are Bob
 		if (len < 48)
 		{
 			LogPrint (eLogWarning, "SSU2: Incorrect TokenRequest len ", len);
-			return;
+			return false;
+		}
+#if OPENSSL_PQ
+		if (header.h.flags[0] >= 2 && header.h.flags[0] <= 4) // ver
+		{
+			if (m_Server.GetVersion () > 2)
+				SetVersion (header.h.flags[0]);
+		}
+		else
+#else
+		if (header.h.flags[0] != 2) // ver
+#endif
+		{
+            LogPrint (eLogWarning, "SSU2: TokenRequest protocol version ", (int)header.h.flags[0], " is not supported");
+            return false;
 		}
 		uint8_t nonce[12] = {0};
 		uint8_t h[32];
@@ -1497,12 +1529,13 @@ namespace transport
 			i2p::context.GetSSU2IntroKey (), nonce, payload, len - 48, false))
 		{
 			LogPrint (eLogWarning, "SSU2: TokenRequest AEAD verification failed ");
-			return;
+			return false;
 		}
 		// payload
 		m_State = eSSU2SessionStateTokenRequestReceived;
 		HandlePayload (payload, len - 48);
 		SendRetry ();
+		return true;
 	}
 
 	void SSU2Session::SendRetry ()
@@ -1582,6 +1615,8 @@ namespace transport
 		}
 		m_State = eSSU2SessionStateTokenReceived;
 		HandlePayload (payload, len - 48);
+		if (m_TerminationReason == eSSU2TerminationReasonIncompatibleVersion)
+			m_Version = 2; // fallback to non-PQ
 		if (!token)
 		{
 			// we should handle payload even for zero token to handle Datetime block and adjust clock in case of clock skew
@@ -1590,8 +1625,6 @@ namespace transport
 		}
 
 		if (!m_NoiseState) m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
-		if (m_TerminationReason == eSSU2TerminationReasonIncompatibleVersion)
-			m_Version = 2; // fallback to non-PQ
 #if OPENSSL_PQ
 		if (m_Version > 2)
 			InitNoiseXKStateMLKEM1 (*m_NoiseState, (i2p::data::CryptoKeyType)(m_Version + 2), m_Address->s);
@@ -2775,7 +2808,7 @@ namespace transport
 		if (addr && addr->ssu)
 		{
 			int mtu = addr->ssu->mtu;
-			if (!mtu && addr->IsV4 ()) mtu = SSU2_MAX_PACKET_SIZE;
+			if (!mtu) mtu = SSU2_MAX_PACKET_SIZE;
 			if (mtu > (int)maxMtu) mtu = maxMtu;
 			if (m_Address && m_Address->ssu && m_Address->ssu->mtu && (!mtu || m_Address->ssu->mtu < mtu))
 				mtu = m_Address->ssu->mtu;
